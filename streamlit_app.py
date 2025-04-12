@@ -5,10 +5,9 @@ from docx.shared import Pt
 from docx.oxml.ns import qn
 from io import BytesIO
 import datetime
-import os
 
 st.set_page_config(page_title="收支憑證自動產生工具", layout="wide")
-st.title("\U0001F4C4 收支憑證自動產生工具")
+st.title("📄 收支憑證自動產生工具")
 
 # 密碼保護
 if "authenticated" not in st.session_state:
@@ -21,24 +20,24 @@ if "authenticated" not in st.session_state:
         st.error("❌ 密碼錯誤，請再試一次。")
     st.stop()
 
-st.markdown(" 請上傳 Excel 表單與 Word 樣板後，點擊『開始產出應證』。")
+st.markdown("請上傳 Excel 表單與 Word 樣板後，點擊『開始產出憑證』。")
 
-# 三個按鈕：左 - Excel，右 - Word，下 - 開始轉換
+# 上傳欄位
 col1, col2 = st.columns(2)
 with col1:
     uploaded_excel = st.file_uploader("📂 上傳 Excel 收支明細", type=["xlsx"], key="excel")
 with col2:
-    uploaded_template = st.file_uploader("📄 上傳 Word 應證樣板", type=["docx"], key="word")
+    uploaded_template = st.file_uploader("📄 上傳 Word 憑證樣板", type=["docx"], key="word")
 
-# 火箭啟動按鈕
-start_conversion = st.button("🚀 開始轉換並產出應證")
+# 開始轉換按鈕
+start_conversion = st.button("🚀 開始轉換並產出憑證")
 
-# Function to apply font
+# 設定字型
 def apply_font(cell):
     for paragraph in cell.paragraphs:
         for run in paragraph.runs:
-            run.font.name = '標潔體'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標潔體')
+            run.font.name = '標楷體'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
             run.font.size = Pt(12)
 
 def extract_date_parts(date_str):
@@ -57,6 +56,7 @@ if start_conversion:
     if uploaded_excel is None:
         st.warning("⚠️ 請先上傳 Excel 檔案")
         st.stop()
+
     df_raw = pd.read_excel(uploaded_excel, header=5)
 
     實際欄位 = {}
@@ -72,7 +72,7 @@ if start_conversion:
         st.stop()
 
     if uploaded_template is None:
-        st.error("❌ 請上傳 Word 應證樣板（.docx 檔案）")
+        st.error("❌ 請上傳 Word 憑證樣板（.docx 檔案）")
         st.stop()
 
     try:
@@ -87,37 +87,37 @@ if start_conversion:
     counter_map = {}
 
     for _, row in df_raw.iterrows():
-        if 實際欄位.get('收入') and pd.notna(row.get(實際欄位['收入'])):
-            金額 = int(row[實際欄位['收入']])
-            表頭 = "收 入　應　證  用　紙"
-            類型 = 'A'
-        elif 實際欄位.get('支出2') and pd.notna(row.get(實際欄位['支出2'])):
-            金額 = int(row[實際欄位['支出2']])
-            表頭 = "支 出　應　證  用　紙"
-            類型 = 'B'
-        else:
-            continue
-
         try:
-            roc_year, month, day = extract_date_parts(row[實際欄位['日期']])
-        except:
-            continue
-        date_code = f"{roc_year:03}{month:02}{day:02}"
-        key = (date_code, 類型)
-        counter_map[key] = counter_map.get(key, 0) + 1
-        seq = f"{counter_map[key]:02}"
-        應證編號 = f"{date_code}{類型}{seq}"
+            if 實際欄位.get('收入') and pd.notna(row.get(實際欄位['收入'])):
+                金額 = int(float(row[實際欄位['收入']]))
+                表頭 = "收 入　憑　證  用　紙"
+                類型 = 'A'
+            elif 實際欄位.get('支出2') and pd.notna(row.get(實際欄位['支出2'])):
+                金額 = int(float(row[實際欄位['支出2']]))
+                表頭 = "支 出　憑　證  用　紙"
+                類型 = 'B'
+            else:
+                continue
 
-        records.append({
-            "應證編號": 應證編號,
-            "科目": row.get(實際欄位['項目'], ''),
-            "金額": 金額,
-            "摘要": row.get(實際欄位['用途'], ''),
-            "表頭": 表頭,
-            "年": roc_year,
-            "月": month,
-            "日": day
-        })
+            roc_year, month, day = extract_date_parts(row[實際欄位['日期']])
+            date_code = f"{roc_year:03}{month:02}{day:02}"
+            key = (date_code, 類型)
+            counter_map[key] = counter_map.get(key, 0) + 1
+            seq = f"{counter_map[key]:02}"
+            憑證編號 = f"{date_code}{類型}{seq}"
+
+            records.append({
+                "憑證編號": 憑證編號,
+                "科目": row.get(實際欄位['項目'], ''),
+                "金額": 金額,
+                "摘要": row.get(實際欄位['用途'], ''),
+                "表頭": 表頭,
+                "年": roc_year,
+                "月": month,
+                "日": day
+            })
+        except Exception:
+            continue
 
     if not records:
         st.warning("⚠️ 沒有可處理的資料。")
@@ -137,7 +137,7 @@ if start_conversion:
                         apply_font(cell)
 
                 table.cell(0, 0).text = rec["表頭"]
-                table.cell(2, 0).text = rec["應證編號"]
+                table.cell(2, 0).text = rec["憑證編號"]
                 table.cell(2, 1).text = rec["科目"]
                 table.cell(2, 2).text = f"{rec['金額']:,}"
                 table.cell(2, 3).text = rec["摘要"]
@@ -147,8 +147,8 @@ if start_conversion:
 
                 p = output_doc.add_paragraph(f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日")
                 for run in p.runs:
-                    run.font.name = '標潔體'
-                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標潔體')
+                    run.font.name = '標楷體'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
                     run.font.size = Pt(12)
 
                 output_doc.add_paragraph()
@@ -159,9 +159,9 @@ if start_conversion:
             buffer.seek(0)
 
             st.download_button(
-                label="📅 下載產出應證 Word 檔",
+                label="📅 下載產出憑證 Word 檔",
                 data=buffer,
-                file_name="收支應證產出結果.docx",
+                file_name="收支憑證產出結果.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
 
