@@ -94,14 +94,13 @@ if start_conversion:
 
     for rec in records:
         # 複製樣板表格結構與樣式
-        table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
-        table.style = template_table.style
-        table.autofit = False
-
-        for i, row in enumerate(template_table.rows):
-            for j, cell in enumerate(row.cells):
-                table.cell(i, j).text = cell.text
-                apply_font(table.cell(i, j))
+        table = output_doc.add_table(rows=0, cols=len(template_table.columns))
+        for row in template_table.rows:
+            new_row = table.add_row().cells
+            for i, cell in enumerate(row.cells):
+                if i < len(new_row):
+                    new_row[i].text = cell.text
+                    apply_font(new_row[i])
 
         # 填入資料
         for row in table.rows:
