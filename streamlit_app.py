@@ -56,7 +56,7 @@ if start_conversion:
         template_doc = Document(BytesIO(uploaded_template.read()))
         template_table = template_doc.tables[0]
     except Exception as e:
-        st.error(f"❌ 無法讀取 Word 樣板：{e}")
+        st.error(f"❌ 無法讀取 Word 憑證樣板：{e}")
         st.stop()
 
     st.success("✅ 已讀取收支明細，開始處理...")
@@ -93,16 +93,17 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        # 複製整個樣板表格
-        table = output_doc.add_table(rows=0, cols=0)
-        for row in template_table.rows:
-            new_row = table.add_row().cells
-            for i, cell in enumerate(row.cells):
-                new_row[i].text = cell.text
-                apply_font(new_row[i])
+        # 複製樣板表格結構與樣式
+        table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
         table.style = template_table.style
         table.autofit = False
 
+        for i, row in enumerate(template_table.rows):
+            for j, cell in enumerate(row.cells):
+                table.cell(i, j).text = cell.text
+                apply_font(table.cell(i, j))
+
+        # 填入資料
         for row in table.rows:
             for cell in row.cells:
                 text = cell.text
