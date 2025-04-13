@@ -103,20 +103,21 @@ if start_conversion:
 
         for row in table.rows:
             for cell in row.cells:
-                if "憑證編號" in cell.text:
+                original = cell.text.strip()
+                if "憑證編號" in original:
                     cell.text = rec["憑證編號"]
-                elif "會計科目" in cell.text:
+                elif "會計科目" in original:
                     cell.text = rec["科目"]
-                elif "金額" in cell.text:
+                elif "金額" in original:
                     cell.text = f"{rec['金額']:,}"
-                elif "摘要" in cell.text:
+                elif "摘要" in original:
                     cell.text = rec["摘要"]
-                elif "日期" in cell.text:
+                elif "年" in original and "月" in original and "日" in original:
                     cell.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
                 apply_font(cell)
 
         for para in template_doc.paragraphs:
-            if "日期" in para.text:
+            if "年" in para.text and "月" in para.text and "日" in para.text:
                 para.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
                 for run in para.runs:
                     run.font.name = '標楷體'
