@@ -116,7 +116,6 @@ if start_conversion:
                     cell.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
                 apply_font(cell)
 
-        output_doc.add_paragraph("\n")
         for element in template_doc.element.body:
             output_doc.element.body.append(element)
 
