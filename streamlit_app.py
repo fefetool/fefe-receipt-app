@@ -43,24 +43,18 @@ def extract_date_parts(date_str):
 
 def replace_placeholders(doc: Document, replacements: dict):
     for p in doc.paragraphs:
-        inline = p.runs
-        if not inline:
-            continue
-        full_text = ''.join(run.text for run in inline)
         for key, val in replacements.items():
-            full_text = full_text.replace(f"{{{{{key}}}}}", str(val))
-        for i in range(len(inline)):
-            inline[i].text = ''
-        if inline:
-            inline[0].text = full_text
+            if f"{{{{{key}}}}}" in p.text:
+                inline = p.runs
+                for i in range(len(inline)):
+                    inline[i].text = inline[i].text.replace(f"{{{{{key}}}}}", str(val))
 
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                full_text = cell.text
                 for key, val in replacements.items():
-                    full_text = full_text.replace(f"{{{{{key}}}}}", str(val))
-                cell.text = full_text
+                    if f"{{{{{key}}}}}" in cell.text:
+                        cell.text = cell.text.replace(f"{{{{{key}}}}}", str(val))
 
 if start_conversion:
     if uploaded_excel is None or uploaded_template is None:
@@ -86,7 +80,9 @@ if start_conversion:
         st.stop()
 
     st.success("✅ 已成功讀取收支明細與樣板，開始轉換...")
-    output_doc = Document()
+    output_doc = Document(BytesIO(template_data))
+    base_doc = output_doc
+
     records = []
 
     for _, row in df_raw.iterrows():
@@ -113,15 +109,16 @@ if start_conversion:
         st.warning("⚠️ 沒有可處理的資料。")
         st.stop()
 
+    final_doc = Document()
     for rec in records:
-        doc = Document(BytesIO(st.session_state["template_data"]))
+        doc = Document(BytesIO(template_data))
         replace_placeholders(doc, rec)
         for element in doc.element.body:
-            output_doc.element.body.append(element)
-        output_doc.add_page_break()
+            final_doc.element.body.append(element)
+        final_doc.add_page_break()
 
     buffer = BytesIO()
-    output_doc.save(buffer)
+    final_doc.save(buffer)
     buffer.seek(0)
 
     st.download_button(
