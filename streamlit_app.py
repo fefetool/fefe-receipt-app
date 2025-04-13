@@ -62,7 +62,9 @@ if start_conversion:
         st.stop()
 
     try:
-        template_doc = Document(BytesIO(uploaded_template.read()))
+        template_data = uploaded_template.read()
+        st.session_state["template_data"] = template_data
+        template_doc = Document(BytesIO(template_data))
         template_table = template_doc.tables[0]
     except Exception as e:
         st.error(f"❌ 無法讀取 Word 憑證樣板：{e}")
@@ -96,31 +98,33 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        # 複製整個樣板表格格式
-        template_doc = Document(BytesIO(uploaded_template.read()))
-        for tbl in template_doc.tables:
-            new_table = output_doc.add_table(rows=len(tbl.rows), cols=len(tbl.columns))
-            new_table.style = tbl.style
-            for i, row in enumerate(tbl.rows):
-                for j, cell in enumerate(row.cells):
-                    new_cell = new_table.cell(i, j)
-                    new_cell.text = cell.text
-                    apply_font(new_cell)
+        template_doc = Document(BytesIO(st.session_state["template_data"]))
+        table = template_doc.tables[0]
 
-        for row in output_doc.tables[-1].rows:
+        for row in table.rows:
             for cell in row.cells:
-                text = cell.text
-                if "憑證編號" in text:
+                if "憑證編號" in cell.text:
                     cell.text = rec["憑證編號"]
-                elif "會計科目" in text:
+                elif "會計科目" in cell.text:
                     cell.text = rec["科目"]
-                elif "金額" in text:
+                elif "金額" in cell.text:
                     cell.text = f"{rec['金額']:,}"
-                elif "摘要" in text:
+                elif "摘要" in cell.text:
                     cell.text = rec["摘要"]
-                elif "日期" in text:
+                elif "日期" in cell.text:
                     cell.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
                 apply_font(cell)
+
+        for para in template_doc.paragraphs:
+            if "日期" in para.text:
+                para.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
+                for run in para.runs:
+                    run.font.name = '標楷體'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
+                    run.font.size = Pt(11)
+
+        for element in template_doc.element.body:
+            output_doc.element.body.append(element)
 
         output_doc.add_page_break()
 
@@ -137,4 +141,3 @@ if start_conversion:
 
     with st.expander("📋 查看原始紀錄資料"):
         st.dataframe(pd.DataFrame(records))
-
