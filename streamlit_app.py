@@ -46,39 +46,12 @@ def extract_date_parts(date_str):
     except:
         return 0, 0, 0
 
-欄位對應表 = {
-    '日期': ['日期', '交易日期', '憑證日期', '入帳日'],
-    '收入': ['收入', '收入金額', '收款金額'],
-    '支出2': ['支出', '支出金額', '付款金額'],
-    '用途': ['用途', '摘要', '說明', '用途說明'],
-    '項目': ['項目', '科目', '分類', '費用類別']
-}
-
 if start_conversion:
     if uploaded_excel is None or uploaded_template is None:
         st.warning("⚠️ 請上傳 Excel 與 Word 樣板。")
         st.stop()
 
-    for i in range(10):
-        df_try = pd.read_excel(uploaded_excel, header=i)
-        if any("日" in str(col) for col in df_try.columns):
-            df_raw = df_try
-            break
-    else:
-        st.error("❌ 無法找到有效的標題列，請確認檔案格式")
-        st.stop()
-
-    實際欄位 = {}
-    for 標準欄, 可接受名 in 欄位對應表.items():
-        for col in df_raw.columns:
-            if any(name in str(col) for name in 可接受名):
-                實際欄位[標準欄] = col
-                break
-
-    if not any(k in 實際欄位 for k in ['收入', '支出2']) or not all(k in 實際欄位 for k in ['日期', '用途', '項目']):
-        st.error("❌ Excel 檔案欄位缺少，請確認包含：日期、收入 或 支出、用途、項目")
-        st.stop()
-
+    df_raw = pd.read_excel(uploaded_excel)
     try:
         template_doc = Document(BytesIO(uploaded_template.read()))
         template_table = template_doc.tables[0]
@@ -89,59 +62,33 @@ if start_conversion:
     st.success("✅ 已讀取收支明細，開始處理...")
     output_doc = Document()
     records = []
-    counter_map = {}
 
     for _, row in df_raw.iterrows():
         try:
-            if 實際欄位.get('收入') and pd.notna(row[實際欄位['收入']]):
-                金額 = int(float(row[實際欄位['收入']]))
-                類型 = 'A'
-                表頭 = "收 入　憑　證  用　紙"
-            elif 實際欄位.get('支出2') and pd.notna(row[實際欄位['支出2']]):
-                金額 = int(float(row[實際欄位['支出2']]))
-                類型 = 'B'
-                表頭 = "支 出　憑　證  用　紙"
-            else:
-                continue
-
-            roc_year, month, day = extract_date_parts(row[實際欄位['日期']])
-            if roc_year == 0:
-                continue
-            date_code = f"{roc_year:03}{month:02}{day:02}"
-            key = (date_code, 類型)
-            counter_map[key] = counter_map.get(key, 0) + 1
-            憑證編號 = f"{date_code}{類型}{counter_map[key]:02}"
-
-            records.append({
-                "憑證編號": 憑證編號,
-                "科目": row.get(實際欄位['項目'], ''),
-                "金額": 金額,
-                "摘要": row.get(實際欄位['用途'], ''),
-                "表頭": 表頭,
-                "年": roc_year,
-                "月": month,
-                "日": day
-            })
+            憑證編號 = str(row[0])
+            科目 = str(row[1])
+            金額 = int(float(row[2]))
+            摘要 = str(row[3])
+            日期 = str(df_raw.columns[0])  # 第一欄標題含日期資訊
+            roc_year, month, day = extract_date_parts(日期)
         except:
             continue
+
+        records.append({
+            "憑證編號": 憑證編號,
+            "科目": 科目,
+            "金額": 金額,
+            "摘要": 摘要,
+            "年": roc_year,
+            "月": month,
+            "日": day
+        })
 
     if not records:
         st.warning("⚠️ 沒有可處理的資料。")
         st.stop()
 
     for rec in records:
-        title = output_doc.add_paragraph("台 日 產 業 技 術 合 作 促 進 會")
-        for run in title.runs:
-            run.font.size = Pt(13)
-            run.font.name = '標楷體'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-
-        sub = output_doc.add_paragraph(rec["表頭"])
-        for run in sub.runs:
-            run.font.size = Pt(16)
-            run.font.name = '標楷體'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-
         table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
         table.style = template_table.style
         table.autofit = False
