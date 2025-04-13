@@ -96,16 +96,18 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
-        table.style = template_table.style
+        # 複製整個樣板表格格式
+        template_doc = Document(BytesIO(uploaded_template.read()))
+        for tbl in template_doc.tables:
+            new_table = output_doc.add_table(rows=len(tbl.rows), cols=len(tbl.columns))
+            new_table.style = tbl.style
+            for i, row in enumerate(tbl.rows):
+                for j, cell in enumerate(row.cells):
+                    new_cell = new_table.cell(i, j)
+                    new_cell.text = cell.text
+                    apply_font(new_cell)
 
-        for i, tmpl_row in enumerate(template_table.rows):
-            for j, tmpl_cell in enumerate(tmpl_row.cells):
-                new_cell = table.cell(i, j)
-                new_cell.text = tmpl_cell.text
-                apply_font(new_cell)
-
-        for row in table.rows:
+        for row in output_doc.tables[-1].rows:
             for cell in row.cells:
                 text = cell.text
                 if "憑證編號" in text:
@@ -135,3 +137,4 @@ if start_conversion:
 
     with st.expander("📋 查看原始紀錄資料"):
         st.dataframe(pd.DataFrame(records))
+
