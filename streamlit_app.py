@@ -43,18 +43,24 @@ def extract_date_parts(date_str):
 
 def replace_placeholders(doc: Document, replacements: dict):
     for p in doc.paragraphs:
-        for key, value in replacements.items():
-            if f"{{{{{key}}}}}" in p.text:
-                inline = p.runs
-                for i in range(len(inline)):
-                    if f"{{{{{key}}}}}" in inline[i].text:
-                        inline[i].text = inline[i].text.replace(f"{{{{{key}}}}}", str(value))
+        inline = p.runs
+        if not inline:
+            continue
+        full_text = ''.join(run.text for run in inline)
+        for key, val in replacements.items():
+            full_text = full_text.replace(f"{{{{{key}}}}}", str(val))
+        for i in range(len(inline)):
+            inline[i].text = ''
+        if inline:
+            inline[0].text = full_text
+
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                for key, value in replacements.items():
-                    if f"{{{{{key}}}}}" in cell.text:
-                        cell.text = cell.text.replace(f"{{{{{key}}}}}", str(value))
+                full_text = cell.text
+                for key, val in replacements.items():
+                    full_text = full_text.replace(f"{{{{{key}}}}}", str(val))
+                cell.text = full_text
 
 if start_conversion:
     if uploaded_excel is None or uploaded_template is None:
@@ -76,7 +82,7 @@ if start_conversion:
         template_data = uploaded_template.read()
         st.session_state["template_data"] = template_data
     except Exception as e:
-        st.error(f"❌ 無法讀取 Word 槽板：{e}")
+        st.error(f"❌ 無法讀取 Word 樣板：{e}")
         st.stop()
 
     st.success("✅ 已成功讀取收支明細與樣板，開始轉換...")
