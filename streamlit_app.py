@@ -55,8 +55,8 @@ if start_conversion:
     try:
         日期欄標題 = df_raw.iloc[0, 0]
         roc_year, month, day = extract_date_parts(日期欄標題)
-        df_raw.columns = df_raw.iloc[1]  # 將第二列設為欄位名稱
-        df_raw = df_raw[2:]  # 資料從第三列開始
+        df_raw.columns = df_raw.iloc[1]
+        df_raw = df_raw[2:]
     except:
         st.error("❌ Excel 日期欄與標題列格式不符，請依照標準範本製作。")
         st.stop()
@@ -103,27 +103,20 @@ if start_conversion:
 
         for row in table.rows:
             for cell in row.cells:
-                original = cell.text.strip()
-                if "憑證編號" in original:
+                content = cell.text.strip()
+                if "憑證編號" in content:
                     cell.text = rec["憑證編號"]
-                elif "會計科目" in original:
+                elif "會計科目" in content:
                     cell.text = rec["科目"]
-                elif "金額" in original:
+                elif "金額" in content:
                     cell.text = f"{rec['金額']:,}"
-                elif "摘要" in original:
+                elif "摘要" in content:
                     cell.text = rec["摘要"]
-                elif "年" in original and "月" in original and "日" in original:
+                elif "年" in content and "月" in content and "日" in content:
                     cell.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
                 apply_font(cell)
 
-        for para in template_doc.paragraphs:
-            if "年" in para.text and "月" in para.text and "日" in para.text:
-                para.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
-                for run in para.runs:
-                    run.font.name = '標楷體'
-                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-                    run.font.size = Pt(11)
-
+        output_doc.add_paragraph("\n")
         for element in template_doc.element.body:
             output_doc.element.body.append(element)
 
