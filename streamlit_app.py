@@ -63,14 +63,18 @@ if start_conversion:
     output_doc = Document()
     records = []
 
+    try:
+        日期欄標題 = df_raw.columns[0]
+        roc_year, month, day = extract_date_parts(日期欄標題)
+    except:
+        roc_year, month, day = 0, 0, 0
+
     for _, row in df_raw.iterrows():
         try:
-            憑證編號 = str(row[0])
-            科目 = str(row[1])
-            金額 = int(float(row[2]))
-            摘要 = str(row[3])
-            日期 = str(df_raw.columns[0])  # 第一欄標題含日期資訊
-            roc_year, month, day = extract_date_parts(日期)
+            憑證編號 = str(row.get("憑證編號", ""))
+            科目 = str(row.get("會計科目", ""))
+            金額 = int(float(row.get("金額", 0)))
+            摘要 = str(row.get("摘要", ""))
         except:
             continue
 
@@ -89,15 +93,15 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
+        # 複製整個樣板表格
+        table = output_doc.add_table(rows=0, cols=0)
+        for row in template_table.rows:
+            new_row = table.add_row().cells
+            for i, cell in enumerate(row.cells):
+                new_row[i].text = cell.text
+                apply_font(new_row[i])
         table.style = template_table.style
         table.autofit = False
-
-        for i in range(len(template_table.rows)):
-            for j in range(len(template_table.columns)):
-                cell = table.cell(i, j)
-                cell.text = template_table.cell(i, j).text
-                apply_font(cell)
 
         for row in table.rows:
             for cell in row.cells:
