@@ -30,6 +30,8 @@ with col2:
 
 start_conversion = st.button("🚀 開始轉換並產出憑證")
 
+# 工具函數
+
 def extract_date_parts(date_str):
     try:
         if isinstance(date_str, datetime.date):
@@ -39,36 +41,45 @@ def extract_date_parts(date_str):
     except:
         return 0, 0, 0
 
-def replace_placeholder(paragraphs, placeholder, new_text):
-    for paragraph in paragraphs:
-        if placeholder in paragraph.text:
-            for run in paragraph.runs:
-                if placeholder in run.text:
-                    run.text = run.text.replace(placeholder, new_text)
+def replace_placeholders(doc: Document, replacements: dict):
+    for p in doc.paragraphs:
+        for key, value in replacements.items():
+            if f"{{{{{key}}}}}" in p.text:
+                inline = p.runs
+                for i in range(len(inline)):
+                    if f"{{{{{key}}}}}" in inline[i].text:
+                        inline[i].text = inline[i].text.replace(f"{{{{{key}}}}}", str(value))
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for key, value in replacements.items():
+                    if f"{{{{{key}}}}}" in cell.text:
+                        cell.text = cell.text.replace(f"{{{{{key}}}}}", str(value))
 
 if start_conversion:
     if uploaded_excel is None or uploaded_template is None:
         st.warning("⚠️ 請上傳 Excel 與 Word 樣板。")
         st.stop()
 
-    df_raw = pd.read_excel(uploaded_excel, header=None)
+    # 嘗試讀取 Excel 的標題列與資料
     try:
+        df_raw = pd.read_excel(uploaded_excel, header=None)
         日期欄標題 = df_raw.iloc[0, 0]
         roc_year, month, day = extract_date_parts(日期欄標題)
         df_raw.columns = df_raw.iloc[1]
         df_raw = df_raw[2:]
-    except:
-        st.error("❌ Excel 日期欄與標題列格式不符，請依照標準範本製作。")
+    except Exception as e:
+        st.error(f"❌ Excel 日期欄與標題列格式錯誤：{e}")
         st.stop()
 
     try:
         template_data = uploaded_template.read()
         st.session_state["template_data"] = template_data
     except Exception as e:
-        st.error(f"❌ 無法讀取 Word 憑證樣板：{e}")
+        st.error(f"❌ 無法讀取 Word 槽板：{e}")
         st.stop()
 
-    st.success("✅ 已讀取收支明細，開始處理...")
+    st.success("✅ 已成功讀取收支明細與樣板，開始轉換...")
     output_doc = Document()
     records = []
 
@@ -81,14 +92,15 @@ if start_conversion:
         except:
             continue
 
+        if not 憑證編號 or not 科目:
+            continue
+
         records.append({
             "憑證編號": 憑證編號,
-            "科目": 科目,
-            "金額": 金額,
+            "會計科目": 科目,
+            "金額": f"{金額:,}",
             "摘要": 摘要,
-            "年": roc_year,
-            "月": month,
-            "日": day
+            "日期": f"{roc_year} 年 {month} 月 {day} 日"
         })
 
     if not records:
@@ -96,17 +108,10 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        template_doc = Document(BytesIO(st.session_state["template_data"]))
-
-        replace_placeholder(template_doc.paragraphs, "{{憑證編號}}", rec["憑證編號"])
-        replace_placeholder(template_doc.paragraphs, "{{會計科目}}", rec["科目"])
-        replace_placeholder(template_doc.paragraphs, "{{金額}}", f"{rec['金額']:,}")
-        replace_placeholder(template_doc.paragraphs, "{{摘要}}", rec["摘要"])
-        replace_placeholder(template_doc.paragraphs, "{{日期}}", f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日")
-
-        for element in template_doc.element.body:
+        doc = Document(BytesIO(st.session_state["template_data"]))
+        replace_placeholders(doc, rec)
+        for element in doc.element.body:
             output_doc.element.body.append(element)
-
         output_doc.add_page_break()
 
     buffer = BytesIO()
