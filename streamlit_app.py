@@ -130,7 +130,12 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        output_doc.add_paragraph("台 日 產 業 技 術 合 作 促 進 會").runs[0].font.size = Pt(13)
+        title = output_doc.add_paragraph("台 日 產 業 技 術 合 作 促 進 會")
+        for run in title.runs:
+            run.font.size = Pt(13)
+            run.font.name = '標楷體'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
+
         sub = output_doc.add_paragraph(rec["表頭"])
         for run in sub.runs:
             run.font.size = Pt(16)
