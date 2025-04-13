@@ -99,13 +99,11 @@ if start_conversion:
         table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
         table.style = template_table.style
 
-        for i, row in enumerate(template_table.rows):
-            for j, cell in enumerate(row.cells):
-                try:
-                    table.cell(i, j).text = cell.text
-                    apply_font(table.cell(i, j))
-                except:
-                    continue
+        for i, tmpl_row in enumerate(template_table.rows):
+            for j, tmpl_cell in enumerate(tmpl_row.cells):
+                new_cell = table.cell(i, j)
+                new_cell.text = tmpl_cell.text
+                apply_font(new_cell)
 
         for row in table.rows:
             for cell in row.cells:
@@ -118,20 +116,9 @@ if start_conversion:
                     cell.text = f"{rec['金額']:,}"
                 elif "摘要" in text:
                     cell.text = rec["摘要"]
+                elif "日期" in text:
+                    cell.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
                 apply_font(cell)
-
-        date_p = output_doc.add_paragraph(f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日")
-        for run in date_p.runs:
-            run.font.size = Pt(11)
-            run.font.name = '標楷體'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-
-        output_doc.add_paragraph("………………憑………………證……………粘………………貼………………線……………")
-        note = output_doc.add_paragraph("說明；本單一式一聯，單位：新臺幣元。附單據。")
-        for run in note.runs:
-            run.font.size = Pt(9)
-            run.font.name = '標楷體'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
 
         output_doc.add_page_break()
 
