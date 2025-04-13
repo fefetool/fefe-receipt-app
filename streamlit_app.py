@@ -57,7 +57,15 @@ if start_conversion:
         st.warning("⚠️ 請先上傳 Excel 檔案")
         st.stop()
 
-    df_raw = pd.read_excel(uploaded_excel, header=5)
+    # 嘗試自動偵測標題列位置（尋找含「日」的欄位）
+    for i in range(10):
+        df_try = pd.read_excel(uploaded_excel, header=i)
+        if any("日" in str(col) for col in df_try.columns):
+            df_raw = df_try
+            break
+    else:
+        st.error("❌ 無法找到有效的標題列，請確認檔案格式")
+        st.stop()
 
     實際欄位 = {}
     for 標準欄, 可接受名 in 欄位對應表.items():
