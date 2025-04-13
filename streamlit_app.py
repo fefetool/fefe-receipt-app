@@ -30,13 +30,6 @@ with col2:
 
 start_conversion = st.button("🚀 開始轉換並產出憑證")
 
-def apply_font(cell, font_size=11):
-    for paragraph in cell.paragraphs:
-        for run in paragraph.runs:
-            run.font.name = '標楷體'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-            run.font.size = Pt(font_size)
-
 def extract_date_parts(date_str):
     try:
         if isinstance(date_str, datetime.date):
@@ -45,6 +38,13 @@ def extract_date_parts(date_str):
         return year, month, day
     except:
         return 0, 0, 0
+
+def replace_placeholder(paragraphs, placeholder, new_text):
+    for paragraph in paragraphs:
+        if placeholder in paragraph.text:
+            for run in paragraph.runs:
+                if placeholder in run.text:
+                    run.text = run.text.replace(placeholder, new_text)
 
 if start_conversion:
     if uploaded_excel is None or uploaded_template is None:
@@ -64,8 +64,6 @@ if start_conversion:
     try:
         template_data = uploaded_template.read()
         st.session_state["template_data"] = template_data
-        template_doc = Document(BytesIO(template_data))
-        template_table = template_doc.tables[0]
     except Exception as e:
         st.error(f"❌ 無法讀取 Word 憑證樣板：{e}")
         st.stop()
@@ -99,22 +97,12 @@ if start_conversion:
 
     for rec in records:
         template_doc = Document(BytesIO(st.session_state["template_data"]))
-        table = template_doc.tables[0]
 
-        for row in table.rows:
-            for cell in row.cells:
-                content = cell.text.strip()
-                if "憑證編號" in content:
-                    cell.text = rec["憑證編號"]
-                elif "會計科目" in content:
-                    cell.text = rec["科目"]
-                elif "金額" in content:
-                    cell.text = f"{rec['金額']:,}"
-                elif "摘要" in content:
-                    cell.text = rec["摘要"]
-                elif "年" in content and "月" in content and "日" in content:
-                    cell.text = f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日"
-                apply_font(cell)
+        replace_placeholder(template_doc.paragraphs, "{{憑證編號}}", rec["憑證編號"])
+        replace_placeholder(template_doc.paragraphs, "{{會計科目}}", rec["科目"])
+        replace_placeholder(template_doc.paragraphs, "{{金額}}", f"{rec['金額']:,}")
+        replace_placeholder(template_doc.paragraphs, "{{摘要}}", rec["摘要"])
+        replace_placeholder(template_doc.paragraphs, "{{日期}}", f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日")
 
         for element in template_doc.element.body:
             output_doc.element.body.append(element)
