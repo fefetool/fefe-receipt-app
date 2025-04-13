@@ -51,7 +51,16 @@ if start_conversion:
         st.warning("⚠️ 請上傳 Excel 與 Word 樣板。")
         st.stop()
 
-    df_raw = pd.read_excel(uploaded_excel)
+    df_raw = pd.read_excel(uploaded_excel, header=None)
+    try:
+        日期欄標題 = df_raw.iloc[0, 0]
+        roc_year, month, day = extract_date_parts(日期欄標題)
+        df_raw.columns = df_raw.iloc[1]  # 將第二列設為欄位名稱
+        df_raw = df_raw[2:]  # 資料從第三列開始
+    except:
+        st.error("❌ Excel 日期欄與標題列格式不符，請依照標準範本製作。")
+        st.stop()
+
     try:
         template_doc = Document(BytesIO(uploaded_template.read()))
         template_table = template_doc.tables[0]
@@ -63,18 +72,12 @@ if start_conversion:
     output_doc = Document()
     records = []
 
-    try:
-        日期欄標題 = df_raw.columns[0]
-        roc_year, month, day = extract_date_parts(日期欄標題)
-    except:
-        roc_year, month, day = 0, 0, 0
-
     for _, row in df_raw.iterrows():
         try:
-            憑證編號 = str(row.get("憑證編號", ""))
-            科目 = str(row.get("會計科目", ""))
+            憑證編號 = str(row.get("憑證編號", "")).strip()
+            科目 = str(row.get("會計科目", "")).strip()
             金額 = int(float(row.get("金額", 0)))
-            摘要 = str(row.get("摘要", ""))
+            摘要 = str(row.get("摘要", "")).strip()
         except:
             continue
 
@@ -93,16 +96,17 @@ if start_conversion:
         st.stop()
 
     for rec in records:
-        # 複製樣板表格結構與樣式
-        table = output_doc.add_table(rows=0, cols=len(template_table.columns))
-        for row in template_table.rows:
-            new_row = table.add_row().cells
-            for i, cell in enumerate(row.cells):
-                if i < len(new_row):
-                    new_row[i].text = cell.text
-                    apply_font(new_row[i])
+        table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
+        table.style = template_table.style
 
-        # 填入資料
+        for i, row in enumerate(template_table.rows):
+            for j, cell in enumerate(row.cells):
+                try:
+                    table.cell(i, j).text = cell.text
+                    apply_font(table.cell(i, j))
+                except:
+                    continue
+
         for row in table.rows:
             for cell in row.cells:
                 text = cell.text
