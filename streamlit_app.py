@@ -32,13 +32,14 @@ with col2:
 # 開始轉換按鈕
 start_conversion = st.button("🚀 開始轉換並產出憑證")
 
-# 設定字型
-def apply_font(cell):
+# 設定字型與大小
+
+def apply_font(cell, font_size=12):
     for paragraph in cell.paragraphs:
         for run in paragraph.runs:
             run.font.name = '標楷體'
             run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-            run.font.size = Pt(12)
+            run.font.size = Pt(font_size)
 
 def extract_date_parts(date_str):
     year, month, day = map(int, str(date_str).split('/'))
@@ -57,7 +58,6 @@ if start_conversion:
         st.warning("⚠️ 請先上傳 Excel 檔案")
         st.stop()
 
-    # 嘗試自動偵測標題列位置（尋找含「日」的欄位）
     for i in range(10):
         df_try = pd.read_excel(uploaded_excel, header=i)
         if any("日" in str(col) for col in df_try.columns):
@@ -136,28 +136,55 @@ if start_conversion:
 
             for rec in records:
                 table = output_doc.add_table(rows=len(template_table.rows), cols=len(template_table.columns))
+                table.style = template_table.style
                 table.autofit = False
 
                 for i in range(len(template_table.rows)):
                     for j in range(len(template_table.columns)):
                         cell = table.cell(i, j)
-                        cell.text = template_table.cell(i, j).text
-                        apply_font(cell)
+                        template_cell = template_table.cell(i, j)
+                        cell.text = template_cell.text
+                        apply_font(cell, font_size=11)
 
-                table.cell(0, 0).text = rec["表頭"]
-                table.cell(2, 0).text = rec["憑證編號"]
-                table.cell(2, 1).text = rec["科目"]
-                table.cell(2, 2).text = f"{rec['金額']:,}"
-                table.cell(2, 3).text = rec["摘要"]
+                for row in table.rows:
+                    for cell in row.cells:
+                        if "憑證編號" in cell.text:
+                            cell.text = rec["憑證編號"]
+                            apply_font(cell, font_size=11)
+                        elif "會計科目" in cell.text:
+                            cell.text = rec["科目"]
+                            apply_font(cell, font_size=11)
+                        elif "金額" in cell.text:
+                            cell.text = f"{rec['金額']:,}"
+                            apply_font(cell, font_size=11)
+                        elif "摘要" in cell.text:
+                            cell.text = rec["摘要"]
+                            apply_font(cell, font_size=11)
 
-                for col in [0, 1, 2, 3]:
-                    apply_font(table.cell(2, col))
-
-                p = output_doc.add_paragraph(f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日")
-                for run in p.runs:
+                title = output_doc.add_paragraph("台 日 產 業 技 術 合 作 促 進 會")
+                for run in title.runs:
                     run.font.name = '標楷體'
                     run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-                    run.font.size = Pt(12)
+                    run.font.size = Pt(13)
+
+                subtitle = output_doc.add_paragraph(rec["表頭"])
+                for run in subtitle.runs:
+                    run.font.name = '標楷體'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
+                    run.font.size = Pt(16)
+
+                date_p = output_doc.add_paragraph(f"{rec['年']} 年 {rec['月']} 月 {rec['日']} 日")
+                for run in date_p.runs:
+                    run.font.name = '標楷體'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
+                    run.font.size = Pt(11)
+
+                output_doc.add_paragraph("………………憑………………證……………粘………………貼………………線……………")
+                note = output_doc.add_paragraph("說明；本單一式一聯，單位：新臺幣元。附單據。")
+                for run in note.runs:
+                    run.font.name = '標楷體'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
+                    run.font.size = Pt(9)
 
                 output_doc.add_paragraph()
                 output_doc.add_page_break()
@@ -177,4 +204,3 @@ if start_conversion:
                 st.dataframe(pd.DataFrame(records))
         except Exception as e:
             st.error(f"❌ 檔案產出錯誤：{e}")
-
