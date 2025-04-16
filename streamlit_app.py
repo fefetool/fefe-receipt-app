@@ -212,6 +212,8 @@ def create_voucher_page(doc, record, is_income=True):
         run.font.size = Pt(10)
     
     # 添加分頁符
+    if len(doc.paragraphs) > 0 and doc.paragraphs[-1].text == "":
+        doc.paragraphs[-1]._p.getparent().remove(doc.paragraphs[-1]._p)
     doc.add_page_break()
 
 if start_conversion:
@@ -263,10 +265,8 @@ if start_conversion:
             create_voucher_page(output_doc, record, is_income=False)
         
         # 移除最後一頁多餘的分頁符
-        if len(output_doc.paragraphs) > 0:
-            last_paragraph = output_doc.paragraphs[-1]
-            if last_paragraph.runs and last_paragraph.runs[-1].text == "":
-                output_doc._body.remove(last_paragraph._element)
+        if len(output_doc.paragraphs) > 0 and output_doc.paragraphs[-1].text == "":
+            output_doc.paragraphs[-1]._element.getparent().remove(output_doc.paragraphs[-1]._element)
         
         # 保存結果
         output_buffer = BytesIO()
