@@ -1,132 +1,104 @@
 import streamlit as st
 import pandas as pd
 from docx import Document
-from docx.shared import Pt
-from docx.oxml.ns import qn
 from io import BytesIO
-import datetime
+import re
 
+# 頁面設定
 st.set_page_config(page_title="收支憑證自動產生工具", layout="wide")
-st.title("📄 收支憑證自動產生工具")
+st.title("收支憑證自動產生工具")
 
-# 密碼保護
-if "authenticated" not in st.session_state:
-    password = st.text_input("請輸入密碼以進入系統：", type="password")
-    if password == "FEFE":
-        st.session_state.authenticated = True
-        st.success("✅ 密碼正確，請繼續操作。")
-        st.rerun()
-    elif password:
-        st.error("❌ 密碼錯誤，請再試一次。")
-    st.stop()
+# 函式：從日期字串提取民國年、月、日
+def extract_date_parts(date_str):
+    match = re.search(r'(\d+)年\s*(\d+)月\s*(\d+)日', date_str)
+    if match:
+        return match.group(1), match.group(2), match.group(3)
+    return None, None, None
 
-st.markdown("請上傳 Excel 表單與 Word 樣板後，點擊『開始產出憑證』。")
+# 文件上傳區
+st.header("請上傳 Excel 收支明細與 Word 樣板")
 
 col1, col2 = st.columns(2)
+
 with col1:
-    uploaded_excel = st.file_uploader("📂 上傳 Excel 收支明細", type=["xlsx"], key="excel")
+    uploaded_excel = st.file_uploader("上傳 Excel 收支明細", type=["xlsx"], key="excel_uploader")
+
 with col2:
-    uploaded_template = st.file_uploader("📄 上傳 Word 憑證樣板", type=["docx"], key="word")
+    uploaded_template = st.file_uploader("上傳 Word 憑證樣板", type=["docx"], key="word_uploader")
 
-start_conversion = st.button("🚀 開始轉換並產出憑證")
-
-# 工具函數
-
-def extract_date_parts(date_str):
-    try:
-        if isinstance(date_str, datetime.date):
-            return date_str.year - 1911, date_str.month, date_str.day
-        year, month, day = map(int, str(date_str).split('/'))
-        return year, month, day
-    except:
-        return 0, 0, 0
-
-def replace_placeholders(doc: Document, replacements: dict):
-    for p in doc.paragraphs:
-        for key, val in replacements.items():
-            if f"{{{{{key}}}}}" in p.text:
-                inline = p.runs
-                for i in range(len(inline)):
-                    inline[i].text = inline[i].text.replace(f"{{{{{key}}}}}", str(val))
-
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for key, val in replacements.items():
-                    if f"{{{{{key}}}}}" in cell.text:
-                        cell.text = cell.text.replace(f"{{{{{key}}}}}", str(val))
+# 開始轉換按鈕
+start_conversion = st.button("開始轉換並產出憑證")
 
 if start_conversion:
+    # 檢查文件是否已上傳
     if uploaded_excel is None or uploaded_template is None:
-        st.warning("⚠️ 請上傳 Excel 與 Word 樣板。")
+        st.warning("▲ 請上傳 Excel 收支明細與 Word 樣板")
         st.stop()
 
-    # 嘗試讀取 Excel 的標題列與資料
     try:
+        # 讀取 Excel 文件
         df_raw = pd.read_excel(uploaded_excel, header=None)
-        日期欄標題 = df_raw.iloc[0, 0]
+        
+        # 檢查是否有足夠的行數
+        if len(df_raw) < 2:
+            st.error("X Excel 文件格式錯誤：至少需要包含標題行和數據行")
+            st.stop()
+        
+        # 提取日期和設置列名
+        日期欄標題 = str(df_raw.iloc[0, 0])
         roc_year, month, day = extract_date_parts(日期欄標題)
-        df_raw.columns = df_raw.iloc[1]
-        df_raw = df_raw[2:]
+        
+        if None in (roc_year, month, day):
+            st.error("X Excel 日期格式錯誤，請使用 '民國XXX年XX月XX日' 格式")
+            st.stop()
+            
+        # 創建新的 DataFrame 並設置列名
+        df = df_raw.iloc[2:].copy()
+        df.columns = df_raw.iloc[1].tolist()
+        
     except Exception as e:
-        st.error(f"❌ Excel 日期欄與標題列格式錯誤：{e}")
+        st.error(f"X 讀取 Excel 文件時發生錯誤：{e}")
         st.stop()
 
     try:
+        # 讀取 Word 模板
         template_data = uploaded_template.read()
         st.session_state["template_data"] = template_data
+        
+        # 創建替換字典 (根據您的實際需求修改)
+        replacements = {
+            "YEAR": roc_year,
+            "MONTH": month,
+            "DAY": day,
+            # 添加其他需要替換的欄位
+        }
+        
+        # 處理 Word 文件
+        output_doc = Document(BytesIO(template_data))
+        
+        # 替換模板中的標記
+        for table in output_doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for key, val in replacements.items():
+                        if f"{{{{{key}}}}}" in cell.text:  # 使用 {{KEY}} 作為標記
+                            cell.text = cell.text.replace(f"{{{{{key}}}}}", str(val))
+        
+        # 保存結果到記憶體
+        output_buffer = BytesIO()
+        output_doc.save(output_buffer)
+        output_buffer.seek(0)
+        
+        st.success("● 憑證生成完成！")
+        
+        # 提供下載按鈕
+        st.download_button(
+            label="下載憑證",
+            data=output_buffer,
+            file_name="收支憑證.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        
     except Exception as e:
-        st.error(f"❌ 無法讀取 Word 樣板：{e}")
+        st.error(f"X 處理 Word 樣板時發生錯誤：{e}")
         st.stop()
-
-    st.success("✅ 已成功讀取收支明細與樣板，開始轉換...")
-    output_doc = Document(BytesIO(template_data))
-    base_doc = output_doc
-
-    records = []
-
-    for _, row in df_raw.iterrows():
-        try:
-            憑證編號 = str(row.get("憑證編號", "")).strip()
-            科目 = str(row.get("會計科目", "")).strip()
-            金額 = int(float(row.get("金額", 0)))
-            摘要 = str(row.get("摘要", "")).strip()
-        except:
-            continue
-
-        if not 憑證編號 or not 科目:
-            continue
-
-        records.append({
-            "憑證編號": 憑證編號,
-            "會計科目": 科目,
-            "金額": f"{金額:,}",
-            "摘要": 摘要,
-            "日期": f"{roc_year} 年 {month} 月 {day} 日"
-        })
-
-    if not records:
-        st.warning("⚠️ 沒有可處理的資料。")
-        st.stop()
-
-    final_doc = Document()
-    for rec in records:
-        doc = Document(BytesIO(template_data))
-        replace_placeholders(doc, rec)
-        for element in doc.element.body:
-            final_doc.element.body.append(element)
-        final_doc.add_page_break()
-
-    buffer = BytesIO()
-    final_doc.save(buffer)
-    buffer.seek(0)
-
-    st.download_button(
-        label="📥 下載產出憑證 Word 檔",
-        data=buffer,
-        file_name="收支憑證產出結果.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-
-    with st.expander("📋 查看原始紀錄資料"):
-        st.dataframe(pd.DataFrame(records))
