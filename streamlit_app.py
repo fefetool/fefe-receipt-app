@@ -84,7 +84,7 @@ def set_cell_border(cell, border_style="single", border_size=4, border_color="00
     tcPr.append(tcBorders)
 
 def create_voucher_page(doc, record, is_income=True):
-    """創建單一憑證頁面（完全符合樣本格式）"""
+    """創建單一憑證頁面（完全符合最新樣本格式）"""
     # 1. 添加標題「台日產業技術合作促進會」
     title = doc.add_paragraph()
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -92,7 +92,7 @@ def create_voucher_page(doc, record, is_income=True):
     run.font.name = "標楷體"
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
     run.font.size = Pt(14)
-    run.font.color.rgb = RGBColor(0, 0, 0)  # 黑色
+    run.font.color.rgb = RGBColor(0, 0, 0)
     
     # 2. 添加「收入憑證用紙」或「支出憑證用紙」
     subtitle = doc.add_paragraph()
@@ -103,9 +103,8 @@ def create_voucher_page(doc, record, is_income=True):
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
     run.font.size = Pt(16)
     run.font.bold = True
-    run.font.color.rgb = RGBColor(0, 0, 0)  # 黑色
     
-    # 3. 添加日期 (格式：114年3月5日)
+    # 3. 添加日期 (格式：114年3月22日)
     date_obj = record["日期"]
     roc_year = date_obj.year - 1911
     formatted_date = f"{roc_year}年{date_obj.month}月{date_obj.day}日"
@@ -120,8 +119,6 @@ def create_voucher_page(doc, record, is_income=True):
     table = doc.add_table(rows=2, cols=4)
     table.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     table.style = "Table Grid"
-    
-    # 設定表格寬度 (17.5公分)
     table.width = Cm(17.5)
     
     # 設定欄寬
@@ -158,7 +155,7 @@ def create_voucher_page(doc, record, is_income=True):
     # 設定數據行格式
     row_cells[0].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 憑證編號置中
     row_cells[1].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 會計科目置中
-    row_cells[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 金額置中
+    row_cells[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT   # 金額置右
     row_cells[3].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.LEFT    # 摘要置左
     
     for cell in row_cells:
@@ -173,15 +170,13 @@ def create_voucher_page(doc, record, is_income=True):
     
     sign_table = doc.add_table(rows=1, cols=4)
     sign_table.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    
-    # 設定簽名表格寬度
     sign_table.width = Cm(17.5)
     
     # 設定簽名表格欄寬
-    sign_table.columns[0].width = Cm(4.0)
-    sign_table.columns[1].width = Cm(4.0)
-    sign_table.columns[2].width = Cm(4.0)
-    sign_table.columns[3].width = Cm(5.5)
+    sign_table.columns[0].width = Cm(3.5)
+    sign_table.columns[1].width = Cm(3.5)
+    sign_table.columns[2].width = Cm(3.5)
+    sign_table.columns[3].width = Cm(7.0)
     
     # 填入簽名欄位
     sign_cells = sign_table.rows[0].cells
@@ -212,8 +207,6 @@ def create_voucher_page(doc, record, is_income=True):
         run.font.size = Pt(10)
     
     # 添加分頁符
-    if len(doc.paragraphs) > 0 and doc.paragraphs[-1].text == "":
-        doc.paragraphs[-1]._p.getparent().remove(doc.paragraphs[-1]._p)
     doc.add_page_break()
 
 if start_conversion:
@@ -263,10 +256,6 @@ if start_conversion:
         ])
         for idx, record in expense_records.iterrows():
             create_voucher_page(output_doc, record, is_income=False)
-        
-        # 移除最後一頁多餘的分頁符
-        if len(output_doc.paragraphs) > 0 and output_doc.paragraphs[-1].text == "":
-            output_doc.paragraphs[-1]._element.getparent().remove(output_doc.paragraphs[-1]._element)
         
         # 保存結果
         output_buffer = BytesIO()
