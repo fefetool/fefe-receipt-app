@@ -4,6 +4,10 @@ from docx import Document
 from io import BytesIO
 import re
 from datetime import datetime
+from docx.shared import Pt
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.oxml.ns import qn
+from docx.enum.style import WD_STYLE_TYPE
 
 # 頁面設定
 st.set_page_config(page_title="收支憑證自動產生工具", layout="wide")
@@ -45,14 +49,14 @@ def convert_roc_date(roc_date):
     date_str = str(roc_date)
     
     # 處理多種日期格式
-    match = re.search(r'(\d+)[-/](\d+)[-/](\d+)', date_str)
+    match = re.search(r'(\d+)[-/年](\d+)[-/月](\d+)', date_str.replace(" ", ""))
     if match:
         roc_year = int(match.group(1))
         month = int(match.group(2))
         day = int(match.group(3))
         
-        # 簡單判斷年份是否合理
-        if roc_year > 150:  # 假設民國年>150表示可能是民國年
+        # 民國年轉西元年
+        if 100 < roc_year < 200:  # 合理民國年範圍
             western_year = roc_year + 1911
         else:
             western_year = roc_year
@@ -62,6 +66,70 @@ def convert_roc_date(roc_date):
         except:
             return None
     return None
+
+def create_voucher_page(doc, record, is_income=True):
+    """創建單一憑證頁面"""
+    # 添加標題
+    title = "收 入 憑 證 用 紙" if is_income else "支 出 憑 證 用 紙"
+    doc.add_paragraph("台 日 產 業 技 術 合 作 促 進 會", style="Heading 1")
+    heading = doc.add_paragraph(title)
+    heading.style = doc.styles["Heading 2"]
+    
+    # 添加日期
+    date_obj = record["日期"]
+    roc_year = date_obj.year - 1911
+    formatted_date = f"{roc_year}年{date_obj.month}月{date_obj.day}日"
+    doc.add_paragraph(formatted_date)
+    
+    # 創建主表格
+    table = doc.add_table(rows=2, cols=4)
+    table.style = "Table Grid"
+    
+    # 設置表格標題行
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = "憑 證 編 號"
+    hdr_cells[1].text = "會 計 科 目"
+    hdr_cells[2].text = "金    額"
+    hdr_cells[3].text = "摘    要"
+    
+    # 填入數據
+    row_cells = table.rows[1].cells
+    row_cells[0].text = str(record["憑證編號"]) if pd.notna(record["憑證編號"]) else ""
+    row_cells[1].text = str(record["科目"]) if pd.notna(record["科目"]) else ""
+    amount = record["收入"] if is_income else record["支出"]
+    row_cells[2].text = f"{int(amount):,}" if pd.notna(amount) else ""
+    row_cells[3].text = str(record["摘要"]) if pd.notna(record["摘要"]) else ""
+    
+    # 添加簽名欄表格
+    doc.add_paragraph()  # 空行
+    sign_table = doc.add_table(rows=1, cols=4)
+    sign_table.style = "Table Grid"
+    sign_cells = sign_table.rows[0].cells
+    sign_cells[0].text = "理 事 長"
+    sign_cells[1].text = "秘 書 長"
+    sign_cells[2].text = "副 秘 書 長"
+    sign_cells[3].text = "製    單"
+    
+    # 添加說明文字
+    doc.add_paragraph("說明：本單一式二聯，單位：新臺幣元。附單據。")
+    
+    # 設置全文字體
+    set_document_font(doc)
+
+def set_document_font(doc):
+    """設置整份文件字體為標楷體"""
+    for paragraph in doc.paragraphs:
+        for run in paragraph.runs:
+            run.font.name = "標楷體"
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
+    
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.name = "標楷體"
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
 
 if start_conversion:
     if not uploaded_excel or not uploaded_template:
@@ -89,26 +157,14 @@ if start_conversion:
         st.stop()
 
     try:
-        # 讀取 Word 模板
-        template_data = uploaded_template.read()
-        output_doc = Document(BytesIO(template_data))
+        # 創建新文件
+        output_doc = Document()
         
         # 處理收入憑證
         income_records = bank_df[bank_df["收入"].notna() & (bank_df["收入"] != 0)]
         for idx, record in income_records.iterrows():
-            if len(output_doc.tables) > 0:
-                income_table = output_doc.tables[0]
-                
-                date_obj = record["日期"]
-                roc_year = date_obj.year - 1911
-                formatted_date = f"民國{roc_year}年{date_obj.month:02d}月{date_obj.day:02d}日"
-                
-                # 替換表格內容
-                income_table.cell(0, 0).text = formatted_date  # 日期
-                income_table.cell(2, 0).text = str(record["憑證編號"]) if pd.notna(record["憑證編號"]) else ""
-                income_table.cell(2, 1).text = str(record["科目"]) if pd.notna(record["科目"]) else ""
-                income_table.cell(2, 3).text = f"{int(record['收入']):,}"  # 金額
-                income_table.cell(2, 5).text = str(record["摘要"]) if pd.notna(record["摘要"]) else ""
+            create_voucher_page(output_doc, record, is_income=True)
+            output_doc.add_page_break()
         
         # 處理支出憑證
         expense_records = pd.concat([
@@ -116,26 +172,17 @@ if start_conversion:
             cash_df[cash_df["支出"].notna() & (cash_df["支出"] != 0)]
         ])
         for idx, record in expense_records.iterrows():
-            if len(output_doc.tables) > 1:
-                expense_table = output_doc.tables[1]
-                
-                date_obj = record["日期"]
-                roc_year = date_obj.year - 1911
-                formatted_date = f"民國{roc_year}年{date_obj.month:02d}月{date_obj.day:02d}日"
-                
-                # 替換表格內容
-                expense_table.cell(0, 0).text = formatted_date  # 日期
-                expense_table.cell(2, 0).text = str(record["憑證編號"]) if pd.notna(record.get("憑證編號")) else ""
-                expense_table.cell(2, 1).text = str(record["科目"]) if pd.notna(record["科目"]) else ""
-                expense_table.cell(2, 3).text = f"{int(record['支出']):,}"  # 金額
-                expense_table.cell(2, 5).text = str(record["摘要"]) if pd.notna(record["摘要"]) else ""
+            create_voucher_page(output_doc, record, is_income=False)
+            if idx < len(expense_records) - 1:  # 最後一筆不加分頁
+                output_doc.add_page_break()
         
         # 保存結果
         output_buffer = BytesIO()
         output_doc.save(output_buffer)
         output_buffer.seek(0)
         
-        st.success("憑證生成完成！")
+        st.success("憑證生成完成！共產生 {} 筆收入憑證和 {} 筆支出憑證。".format(
+            len(income_records), len(expense_records)))
         st.download_button(
             label="下載憑證文件",
             data=output_buffer,
