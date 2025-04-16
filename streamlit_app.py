@@ -67,45 +67,34 @@ def convert_roc_date(roc_date):
             return None
     return None
 
-def set_cell_border(cell, **kwargs):
+def set_cell_border(cell, border_style="single", border_size=4, border_color="000000"):
     """設定表格儲存格邊框"""
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
     
-    # 檢查是否存在邊框元素
-    tcBorders = tcPr.first_child_found_in("w:tcBorders")
-    if tcBorders is None:
-        tcBorders = OxmlElement('w:tcBorders')
-        tcPr.append(tcBorders)
+    tcBorders = OxmlElement('w:tcBorders')
     
-    # 設定各邊框
-    for edge in ('start', 'top', 'end', 'bottom', 'insideH', 'insideV'):
-        edge_data = kwargs.get(edge)
-        if edge_data:
-            tag = 'w:{}'.format(edge)
-            
-            # 檢查邊框是否存在
-            element = tcBorders.find(qn(tag))
-            if element is None:
-                element = OxmlElement(tag)
-                tcBorders.append(element)
-            
-            # 設定邊框樣式
-            for key, value in edge_data.items():
-                element.set(qn('w:{}'.format(key)), str(value))
+    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        edge_element = OxmlElement(f'w:{edge}')
+        edge_element.set(qn('w:val'), border_style)
+        edge_element.set(qn('w:sz'), str(border_size))
+        edge_element.set(qn('w:color'), border_color)
+        tcBorders.append(edge_element)
+    
+    tcPr.append(tcBorders)
 
 def create_voucher_page(doc, record, is_income=True):
-    """創建單一憑證頁面（完全符合格式要求）"""
+    """創建單一憑證頁面（完全符合樣本格式）"""
     # 1. 添加標題「台日產業技術合作促進會」
     title = doc.add_paragraph()
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     run = title.add_run("台  日  產  業  技  術  合  作  促  進  會")
     run.font.name = "標楷體"
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-    run.font.size = Pt(13)
+    run.font.size = Pt(14)
     run.font.color.rgb = RGBColor(0, 0, 0)  # 黑色
     
-    # 2. 添加「收入/支出憑證用紙」
+    # 2. 添加「收入憑證用紙」或「支出憑證用紙」
     subtitle = doc.add_paragraph()
     subtitle.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     voucher_text = "收  入  憑  證  用  紙" if is_income else "支  出  憑  證  用  紙"
@@ -113,9 +102,10 @@ def create_voucher_page(doc, record, is_income=True):
     run.font.name = "標楷體"
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
     run.font.size = Pt(16)
-    run.font.color.rgb = RGBColor(255, 0, 0) if is_income else RGBColor(0, 0, 255)  # 紅/藍色
+    run.font.bold = True
+    run.font.color.rgb = RGBColor(0, 0, 0)  # 黑色
     
-    # 3. 添加日期 (格式：114年2月2日)
+    # 3. 添加日期 (格式：114年3月5日)
     date_obj = record["日期"]
     roc_year = date_obj.year - 1911
     formatted_date = f"{roc_year}年{date_obj.month}月{date_obj.day}日"
@@ -126,35 +116,24 @@ def create_voucher_page(doc, record, is_income=True):
         run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
         run.font.size = Pt(12)
     
-    # 4. 創建主表格 (第一欄)
+    # 4. 創建主表格
     table = doc.add_table(rows=2, cols=4)
     table.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    table.style = "Table Grid"
     
-    # 設定表格寬度 (17.73公分)
-    table.width = Cm(17.73)
+    # 設定表格寬度 (17.5公分)
+    table.width = Cm(17.5)
     
-    # 設定列高 (第一列0.76cm, 第二列1.96cm)
-    for row in table.rows:
-        tr = row._tr
-        trPr = tr.get_or_add_trPr()
-        trHeight = OxmlElement('w:trHeight')
-        trHeight.set(qn('w:val'), str(int(0.76 * 567)) if row == table.rows[0] else str(int(1.96 * 567)))
-        trHeight.set(qn('w:hRule'), 'exact')
-        trPr.append(trHeight)
-    
-    # 設定欄寬 (3.23公分)
-    for col in table.columns:
-        col.width = Cm(3.23)
+    # 設定欄寬
+    table.columns[0].width = Cm(3.5)  # 憑證編號
+    table.columns[1].width = Cm(3.5)  # 會計科目
+    table.columns[2].width = Cm(3.5)  # 金額
+    table.columns[3].width = Cm(7.0)  # 摘要
     
     # 設定表格邊框
     for row in table.rows:
         for cell in row.cells:
-            set_cell_border(cell,
-                top={"val": "single", "sz": 4, "color": "000000"},
-                bottom={"val": "single", "sz": 4, "color": "000000"},
-                start={"val": "single", "sz": 4, "color": "000000"},
-                end={"val": "single", "sz": 4, "color": "000000"}
-            )
+            set_cell_border(cell)
     
     # 填入標題行 (第一列)
     hdr_cells = table.rows[0].cells
@@ -165,8 +144,8 @@ def create_voucher_page(doc, record, is_income=True):
         for run in hdr_cells[i].paragraphs[0].runs:
             run.font.name = "標楷體"
             run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-            run.font.size = Pt(11)
-            run.font.color.rgb = RGBColor(0, 0, 0)
+            run.font.size = Pt(12)
+            run.font.bold = True
     
     # 填入數據行 (第二列)
     row_cells = table.rows[1].cells
@@ -179,7 +158,7 @@ def create_voucher_page(doc, record, is_income=True):
     # 設定數據行格式
     row_cells[0].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 憑證編號置中
     row_cells[1].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 會計科目置中
-    row_cells[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT   # 金額置右
+    row_cells[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER  # 金額置中
     row_cells[3].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.LEFT    # 摘要置左
     
     for cell in row_cells:
@@ -188,38 +167,21 @@ def create_voucher_page(doc, record, is_income=True):
                 run.font.name = "標楷體"
                 run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
                 run.font.size = Pt(12)
-                run.font.color.rgb = RGBColor(0, 0, 0)
     
-    # 5. 添加空行 (9號字高度)
-    doc.add_paragraph().paragraph_format.line_spacing = Pt(9)
+    # 5. 添加簽名欄位
+    doc.add_paragraph()  # 空行
     
-    # 6. 添加簽名欄表格
     sign_table = doc.add_table(rows=1, cols=4)
     sign_table.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    sign_table.width = Cm(17.73)
     
-    # 設定簽名表格列高 (1.06cm)
-    for row in sign_table.rows:
-        tr = row._tr
-        trPr = tr.get_or_add_trPr()
-        trHeight = OxmlElement('w:trHeight')
-        trHeight.set(qn('w:val'), str(int(1.06 * 567)))
-        trHeight.set(qn('w:hRule'), 'exact')
-        trPr.append(trHeight)
+    # 設定簽名表格寬度
+    sign_table.width = Cm(17.5)
     
     # 設定簽名表格欄寬
-    for col in sign_table.columns:
-        col.width = Cm(3.23)
-    
-    # 設定簽名表格邊框
-    for row in sign_table.rows:
-        for cell in row.cells:
-            set_cell_border(cell,
-                top={"val": "single", "sz": 4, "color": "000000"},
-                bottom={"val": "single", "sz": 4, "color": "000000"},
-                start={"val": "single", "sz": 4, "color": "000000"},
-                end={"val": "single", "sz": 4, "color": "000000"}
-            )
+    sign_table.columns[0].width = Cm(4.0)
+    sign_table.columns[1].width = Cm(4.0)
+    sign_table.columns[2].width = Cm(4.0)
+    sign_table.columns[3].width = Cm(5.5)
     
     # 填入簽名欄位
     sign_cells = sign_table.rows[0].cells
@@ -230,17 +192,10 @@ def create_voucher_page(doc, record, is_income=True):
         for run in sign_cells[i].paragraphs[0].runs:
             run.font.name = "標楷體"
             run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0, 0, 0)
+            run.font.size = Pt(12)
     
-    # 7. 添加空白列 (高度1.81cm)
-    empty_row = doc.add_paragraph()
-    empty_row.paragraph_format.line_spacing = Pt(1.81 * 28.35)  # 轉換為點
-    
-    # 8. 添加空行 (9號字高度)
-    doc.add_paragraph().paragraph_format.line_spacing = Pt(9)
-    
-    # 9. 添加憑證粘貼線
+    # 6. 添加憑證粘貼線
+    doc.add_paragraph()  # 空行
     line_para = doc.add_paragraph()
     line_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     line_run = line_para.add_run("..................憑..................證...............粘..................貼..................線...................")
@@ -248,15 +203,15 @@ def create_voucher_page(doc, record, is_income=True):
     line_run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
     line_run.font.size = Pt(9)
     
-    # 10. 添加說明文字
-    note_para = doc.add_paragraph("說明：本單一式一聯，單位：新臺幣元。附單據。")
+    # 7. 添加說明文字
+    note_para = doc.add_paragraph("說明：本單一式二聯，單位：新臺幣元。附單據。")
     note_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in note_para.runs:
         run.font.name = "標楷體"
         run._element.rPr.rFonts.set(qn('w:eastAsia'), '標楷體')
-        run.font.size = Pt(9)
+        run.font.size = Pt(10)
     
-    # 確保最後有分頁符
+    # 添加分頁符
     doc.add_page_break()
 
 if start_conversion:
