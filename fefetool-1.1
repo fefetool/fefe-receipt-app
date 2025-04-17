@@ -1,0 +1,214 @@
+# -*- coding: utf-8 -*-
+import streamlit as st
+import pandas as pd
+from io import BytesIO
+from docx import Document
+from datetime import datetime
+import os
+import zipfile
+from tempfile import NamedTemporaryFile
+from docx.shared import Inches
+from PIL import Image
+
+def init_session_state():
+    if 'field_mappings' not in st.session_state:
+        st.session_state.field_mappings = []
+    if 'logo_position' not in st.session_state:
+        st.session_state.logo_position = "top-right"
+    if 'image_position' not in st.session_state:
+        st.session_state.image_position = "below-center"
+
+def add_image_to_doc(doc, image_file, position, is_logo=False):
+    img_path = NamedTemporaryFile(delete=False, suffix=".png").name
+    with open(img_path, 'wb') as f:
+        f.write(image_file.getvalue())
+
+    try:
+        img = Image.open(img_path)
+        width, height = img.size
+        max_width = Inches(6.5) if not is_logo else Inches(1.5)
+        ratio = min(max_width / width, 1.0)
+        new_width = int(width * ratio)
+        new_height = int(height * ratio)
+
+        if is_logo:
+            section = doc.sections[0]
+            header = section.header
+            paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+
+            if "左" in position:
+                paragraph.alignment = 0
+            elif "右" in position:
+                paragraph.alignment = 2
+
+            run = paragraph.add_run()
+            run.add_picture(img_path, width=Inches(1.5))
+        else:
+            paragraph = doc.add_paragraph()
+            if "置中" in position:
+                paragraph.alignment = 1
+            elif "右" in position:
+                paragraph.alignment = 2
+            else:
+                paragraph.alignment = 0
+
+            run = paragraph.add_run()
+            run.add_picture(img_path, width=Inches(4.0))
+    finally:
+        os.unlink(img_path)
+
+def main():
+    st.set_page_config(page_title="智慧憑證生成系統", layout="wide")
+    st.title("📄 智慧憑證生成系統")
+    init_session_state()
+
+    st.header("1. 文件上传")
+    col1, col2 = st.columns(2)
+    with col1:
+        excel_file = st.file_uploader("📊 上传Excel收支明细", type=["xlsx"], key="excel_uploader")
+    with col2:
+        word_template = st.file_uploader("📄 上传Word凭证模板", type=["docx"], key="word_uploader")
+
+    st.header("2. 日期格式设定")
+    date_format = st.selectbox(
+        "选择日期显示格式：",
+        ["西元年 (2025年4月1日)", "民国年 (民国114年4月1日)"],
+        key="date_format"
+    )
+
+    st.header("3. 字段对应设定")
+    st.info("请设定Word模板中的标记文字与Excel字段的对应关系")
+
+    with st.form("field_mapping_form"):
+        cols = st.columns(2)
+        with cols[0]:
+            template_field = st.text_input("模板字段名称 (如: {{日期}})", key="template_field")
+        with cols[1]:
+            if excel_file:
+                df = pd.read_excel(excel_file)
+                excel_field = st.selectbox("对应Excel字段", df.columns.tolist(), key="excel_field")
+            else:
+                excel_field = st.text_input("对应Excel字段名称", key="excel_field_text")
+
+        if st.form_submit_button("➕ 新增字段对应"):
+            if template_field and excel_field:
+                st.session_state.field_mappings.append({
+                    'template_field': template_field,
+                    'excel_field': excel_field
+                })
+                st.success("字段对应已新增！")
+
+    if st.session_state.field_mappings:
+        st.markdown("**已设定对应字段**")
+        for i, mapping in enumerate(st.session_state.field_mappings):
+            cols = st.columns([1, 1, 0.2])
+            with cols[0]:
+                st.text_input(f"模板字段 {i+1}", value=mapping['template_field'], key=f"template_{i}", disabled=True)
+            with cols[1]:
+                st.text_input(f"Excel字段 {i+1}", value=mapping['excel_field'], key=f"excel_{i}", disabled=True)
+            with cols[2]:
+                if st.button("❌", key=f"delete_{i}"):
+                    st.session_state.field_mappings.pop(i)
+                    st.rerun()
+
+    st.header("4. 图片设置")
+    logo_cols = st.columns(2)
+    with logo_cols[0]:
+        logo_file = st.file_uploader("上传LOGO图片", type=["png", "jpg"], key="logo_uploader")
+    with logo_cols[1]:
+        logo_position = st.selectbox(
+            "LOGO位置：",
+            ["左上", "左下", "右上", "右下"],
+            key="logo_position"
+        )
+
+    image_cols = st.columns(2)
+    with image_cols[0]:
+        image_file = st.file_uploader("上传附加图片", type=["png", "jpg"], key="image_uploader")
+    with image_cols[1]:
+        image_position = st.selectbox(
+            "图片位置：",
+            ["表格下方置中", "表格下方置左", "表格下方置右"],
+            key="image_position"
+        )
+
+    st.header("5. 导出设置")
+    pdf_export = st.checkbox("同时导出PDF格式", key="pdf_export")
+
+    if st.button("🚀 开始产出凭证文件", type="primary", key="generate_button"):
+        if not word_template or not excel_file:
+            st.error("请上传Excel和Word模板文件！")
+        elif not st.session_state.field_mappings:
+            st.error("请至少设定一组字段对应！")
+        else:
+            with st.spinner("正在生成凭证文件..."):
+                try:
+                    df = pd.read_excel(excel_file)
+                    master = Document()
+
+                    for _, row in df.iterrows():
+                        doc = Document(word_template)
+                        for para in doc.paragraphs:
+                            for mapping in st.session_state.field_mappings:
+                                if mapping['template_field'] in para.text:
+                                    value = row[mapping['excel_field']]
+                                    if '日期' in mapping['template_field']:
+                                        if isinstance(value, pd.Timestamp):
+                                            if date_format.startswith("民国"):
+                                                value = f"民国{value.year - 1911}年{value.month}月{value.day}日"
+                                            else:
+                                                value = f"{value.year}年{value.month}月{value.day}日"
+                                    para.text = para.text.replace(mapping['template_field'], str(value))
+
+                        for element in doc.element.body:
+                            master.element.body.append(element)
+                        master.add_page_break()
+
+                    if logo_file:
+                        add_image_to_doc(master, logo_file, logo_position, is_logo=True)
+
+                    if image_file:
+                        add_image_to_doc(master, image_file, image_position, is_logo=False)
+
+                    output = BytesIO()
+                    master.save(output)
+                    output.seek(0)
+
+                    output_filename = f"fefetool_{datetime.today().strftime('%Y%m%d')}"
+
+                    zip_buffer = BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'a', zipfile.ZIP_DEFLATED, False) as zip_file:
+                        zip_file.writestr(f"{output_filename}.docx", output.getvalue())
+
+                        if pdf_export:
+                            try:
+                                from docx2pdf import convert
+                                with NamedTemporaryFile(suffix='.docx', delete=False) as tmp_docx:
+                                    tmp_docx.write(output.getvalue())
+                                    tmp_docx_path = tmp_docx.name
+
+                                pdf_path = f"{output_filename}.pdf"
+                                convert(tmp_docx_path, pdf_path)
+
+                                with open(pdf_path, 'rb') as pdf_file:
+                                    zip_file.writestr(f"{output_filename}.pdf", pdf_file.read())
+                                os.unlink(pdf_path)
+                                os.unlink(tmp_docx_path)
+                            except Exception as e:
+                                st.warning(f"PDF转换失败: {str(e)}")
+
+                    zip_buffer.seek(0)
+
+                    st.success("文件生成完成！")
+                    st.download_button(
+                        label="⬇️ 下载ZIP文件",
+                        data=zip_buffer,
+                        file_name=f"{output_filename}.zip",
+                        mime="application/zip"
+                    )
+
+                except Exception as e:
+                    st.error(f"生成文件时发生错误: {str(e)}")
+
+if __name__ == "__main__":
+    main()
