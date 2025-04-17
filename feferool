@@ -1,0 +1,252 @@
+import streamlit as st
+import pandas as pd
+from io import BytesIO
+from docx import Document
+from datetime import datetime
+import os
+import zipfile
+from tempfile import NamedTemporaryFile
+from docx.shared import Inches
+from PIL import Image
+import base64
+
+# 基本設定
+st.set_page_config(page_title="智慧憑證生成系統", layout="wide")
+st.title("📄 智慧憑證生成系統")
+
+# 初始化 session state
+def init_session_state():
+    if 'field_mappings' not in st.session_state:
+        st.session_state.field_mappings = []
+    if 'logo_position' not in st.session_state:
+        st.session_state.logo_position = "top-right"
+    if 'image_position' not in st.session_state:
+        st.session_state.image_position = "below-center"
+
+init_session_state()
+
+# 檔案上傳區
+st.header("1. 文件上傳")
+col1, col2 = st.columns(2)
+with col1:
+    excel_file = st.file_uploader("📊 上傳 Excel 收支明細", type=["xlsx"], key="excel_uploader")
+with col2:
+    word_template = st.file_uploader("📄 上傳 Word 憑證模板", type=["docx"], key="word_uploader")
+
+# 日期格式選擇
+st.header("2. 日期格式設定")
+date_format = st.selectbox(
+    "選擇日期顯示格式：",
+    ["西元年 (2025年4月1日)", "民國年 (民國114年4月1日)"],
+    key="date_format"
+)
+
+# 欄位對應系統
+st.header("3. 欄位對應設定")
+st.info("請設定Word模板中的標記文字與Excel欄位的對應關係")
+
+if 'field_mappings' not in st.session_state:
+    st.session_state.field_mappings = []
+
+with st.form("field_mapping_form"):
+    cols = st.columns(2)
+    with cols[0]:
+        template_field = st.text_input("模板欄位名稱 (如: {{日期}})", key="template_field")
+    with cols[1]:
+        if excel_file:
+            df = pd.read_excel(excel_file)
+            excel_field = st.selectbox("對應 Excel 欄位", df.columns.tolist(), key="excel_field")
+        else:
+            excel_field = st.text_input("對應 Excel 欄位名稱", key="excel_field_text")
+    
+    if st.form_submit_button("➕ 新增欄位對應"):
+        if template_field and excel_field:
+            st.session_state.field_mappings.append({
+                'template_field': template_field,
+                'excel_field': excel_field
+            })
+            st.success("欄位對應已新增！")
+
+# 顯示已設定的欄位對應
+if st.session_state.field_mappings:
+    st.markdown("**已設定對應欄位**")
+    for i, mapping in enumerate(st.session_state.field_mappings):
+        cols = st.columns([1, 1, 0.2])
+        with cols[0]:
+            st.text_input(f"模板欄位 {i+1}", value=mapping['template_field'], key=f"template_{i}", disabled=True)
+        with cols[1]:
+            st.text_input(f"Excel欄位 {i+1}", value=mapping['excel_field'], key=f"excel_{i}", disabled=True)
+        with cols[2]:
+            if st.button("❌", key=f"delete_{i}"):
+                st.session_state.field_mappings.pop(i)
+                st.rerun()
+
+# 圖片設定
+st.header("4. 圖片設定")
+logo_cols = st.columns(2)
+with logo_cols[0]:
+    logo_file = st.file_uploader("上傳 LOGO 圖片", type=["png", "jpg"], key="logo_uploader")
+with logo_cols[1]:
+    logo_position = st.selectbox(
+        "LOGO 位置：",
+        ["左上", "左下", "右上", "右下"],
+        key="logo_position"
+    )
+
+image_cols = st.columns(2)
+with image_cols[0]:
+    image_file = st.file_uploader("上傳附加圖片", type=["png", "jpg"], key="image_uploader")
+with image_cols[1]:
+    image_position = st.selectbox(
+        "圖片位置：",
+        ["表格下方置中", "表格下方置左", "表格下方置右"],
+        key="image_position"
+    )
+
+# 匯出設定
+st.header("5. 匯出設定")
+pdf_export = st.checkbox("同時匯出 PDF 格式", key="pdf_export")
+
+if st.button("🚀 開始產出憑證文件", type="primary", key="generate_button"):
+    if not word_template or not excel_file:
+        st.error("請上傳 Excel 和 Word 模板文件！")
+    elif not st.session_state.field_mappings:
+        st.error("請至少設定一組欄位對應！")
+    else:
+        with st.spinner("正在生成憑證文件..."):
+            try:
+                # 文件生成邏輯
+                df = pd.read_excel(excel_file)
+                template = Document(word_template)
+                master = Document()
+                
+                # 處理每個條目
+                for _, row in df.iterrows():
+                    doc = Document(word_template)
+                    for para in doc.paragraphs:
+                        for mapping in st.session_state.field_mappings:
+                            if mapping['template_field'] in para.text:
+                                value = row[mapping['excel_field']]
+                                # 日期格式處理
+                                if '日期' in mapping['template_field']:
+                                    if isinstance(value, pd.Timestamp):
+                                        if date_format.startswith("民國"):
+                                            value = f"民國{value.year - 1911}年{value.month}月{value.day}日"
+                                        else:
+                                            value = f"{value.year}年{value.month}月{value.day}日"
+                                para.text = para.text.replace(mapping['template_field'], str(value))
+                    
+                    # 添加到主文件
+                    for element in doc.element.body:
+                        master.element.body.append(element)
+                    master.add_page_break()
+
+                # 處理圖片
+                if logo_file:
+                    add_image_to_doc(master, logo_file, logo_position, is_logo=True)
+                
+                if image_file:
+                    add_image_to_doc(master, image_file, image_position, is_logo=False)
+
+                # 儲存文件
+                output = BytesIO()
+                master.save(output)
+                output.seek(0)
+
+                # 準備下載
+                output_filename = f"fefetool_{datetime.today().strftime('%Y%m%d')}"
+                
+                # 建立ZIP檔案
+                zip_buffer = BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'a', zipfile.ZIP_DEFLATED, False) as zip_file:
+                    zip_file.writestr(f"{output_filename}.docx", output.getvalue())
+                    
+                    if pdf_export:
+                        try:
+                            from docx2pdf import convert
+                            with NamedTemporaryFile(suffix='.docx', delete=False) as tmp_docx:
+                                tmp_docx.write(output.getvalue())
+                                tmp_docx_path = tmp_docx.name
+                            
+                            pdf_path = f"{output_filename}.pdf"
+                            convert(tmp_docx_path, pdf_path)
+                            
+                            with open(pdf_path, 'rb') as pdf_file:
+                                zip_file.writestr(f"{output_filename}.pdf", pdf_file.read())
+                            os.unlink(pdf_path)
+                            os.unlink(tmp_docx_path)
+                        except Exception as e:
+                            st.warning(f"PDF轉換失敗: {str(e)}")
+
+                zip_buffer.seek(0)
+                
+                # 顯示下載按鈕
+                st.success("文件生成完成！")
+                st.download_button(
+                    label="⬇️ 下載 ZIP 檔案",
+                    data=zip_buffer,
+                    file_name=f"{output_filename}.zip",
+                    mime="application/zip"
+                )
+
+            except Exception as e:
+                st.error(f"生成文件時發生錯誤: {str(e)}")
+
+def add_image_to_doc(doc, image_file, position, is_logo=False):
+    """添加圖片到Word文件"""
+    img_path = NamedTemporaryFile(delete=False, suffix=".png").name
+    with open(img_path, 'wb') as f:
+        f.write(image_file.getvalue())
+    
+    try:
+        # 調整圖片大小
+        img = Image.open(img_path)
+        width, height = img.size
+        max_width = Inches(6.5) if not is_logo else Inches(1.5)
+        ratio = min(max_width / width, 1.0)
+        new_width = int(width * ratio)
+        new_height = int(height * ratio)
+        
+        if is_logo:  # LOGO處理
+            section = doc.sections[0]
+            header = section.header
+            paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+            
+            # 位置對齊
+            if "左" in position:
+                paragraph.alignment = 0  # 左對齊
+            elif "右" in position:
+                paragraph.alignment = 2  # 右對齊
+            
+            run = paragraph.add_run()
+            run.add_picture(img_path, width=Inches(1.5))
+        
+        else:  # 附加圖片處理
+            paragraph = doc.add_paragraph()
+            if "置中" in position:
+                paragraph.alignment = 1  # 置中
+            elif "右" in position:
+                paragraph.alignment = 2  # 右對齊
+            else:
+                paragraph.alignment = 0  # 左對齊
+            
+            run = paragraph.add_run()
+            run.add_picture(img_path, width=Inches(4.0))
+    
+    finally:
+        os.unlink(img_path)
+
+# 範例模板下載
+st.sidebar.markdown("## 範例模板下載")
+st.sidebar.download_button(
+    label="📥 下載範例 Excel",
+    data=open("templates/sample_data.xlsx", "rb").read(),
+    file_name="sample_data.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+st.sidebar.download_button(
+    label="📥 下載範例 Word 模板",
+    data=open("templates/sample_template.docx", "rb").read(),
+    file_name="sample_template.docx",
+    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
